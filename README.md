@@ -1,136 +1,39 @@
 # STM32F4 Buffered UART Driver
 
-STM32F4 mikrodenetleyicilerinde UART haberleşmesini **Circular Buffer** ve **interrupt** kullanarak gerçekleştiren bir UART sürücüsüdür.
+STM32F4 mikrodenetleyicilerinde UART haberleşmesini **Interrupt** ve **Circular Buffer** kullanarak gerçekleştiren bir UART sürücüsüdür.
 
-Bu driver ile UART üzerinden gelen ve gönderilen veriler buffer'lar kullanılarak yönetilir. Böylece CPU'nun UART üzerinden veri gönderirken veya alırken sürekli olarak beklemesi yerine, veri aktarımı interrupt'lar üzerinden gerçekleştirilir.
-
-Driver ayrıca `printf` benzeri formatlı veri gönderimini ve UART üzerinden gelen mesajların satır halinde okunmasını desteklemektedir.
+Driver; UART üzerinden veri alma/gönderme, string gönderme, `printf` benzeri formatlı veri gönderme ve gelen verileri satır halinde okuma işlemlerini destekler.
 
 ---
 
-# 📌 Özellikler
+# 🚀 Hızlı Başlangıç
 
-* UART RX işlemlerinde interrupt kullanımı
-* UART TX işlemlerinde interrupt kullanımı
-* RX ve TX için ayrı Circular Buffer kullanımı
-* Karakter gönderme
-* String gönderme
-* `printf` benzeri formatlı veri gönderme
-* UART üzerinden gelen verileri satır halinde okuma
-* Buffer'ın dolu ve boş durumunu kontrol etme
-* Buffer içerisindeki veri sayısını öğrenme
-* STM32 HAL ile uyumlu çalışma
+Driver'ı kendi STM32CubeIDE projenize dahil etmek için aşağıdaki adımları uygulayın.
 
----
+### 1. Driver dosyalarını projenize ekleyin
 
-# 🧠 Çalışma Mantığı
-
-Driver içerisinde UART için iki farklı Circular Buffer kullanılmaktadır:
-
-```text
-              UART
-               │
-       ┌───────┴───────┐
-       │               │
-      RX              TX
-       │               │
-       ▼               ▼
-  RX Buffer        TX Buffer
-       │               │
-       ▼               ▼
-  Uygulama          UART Donanımı
-```
-
-### RX tarafı
-
-UART üzerinden bir karakter geldiğinde `RXNE` interrupt'ı oluşur.
-
-Gelen karakter UART register'ından okunarak RX Circular Buffer'a eklenir.
-
-```text
-UART RX
-   ↓
-RXNE Interrupt
-   ↓
-UART Data Register
-   ↓
-RX Circular Buffer
-   ↓
-Uygulama
-```
-
-### TX tarafı
-
-Uygulama bir karakter veya string göndermek istediğinde veri doğrudan UART'a gönderilmez.
-
-Önce TX Circular Buffer'a eklenir.
-
-Daha sonra `TXE` interrupt'ı kullanılarak buffer içerisindeki veriler UART donanımına aktarılır.
-
-```text
-Uygulama
-   ↓
-TX Circular Buffer
-   ↓
-TXE Interrupt
-   ↓
-UART Data Register
-   ↓
-UART TX
-```
-
-Bu yapı sayesinde uygulama UART donanımını beklemek zorunda kalmadan çalışmaya devam edebilir.
-
----
-
-# 📁 Projeye Dahil Etme
-
-Driver'ı kendi STM32CubeIDE projenize dahil etmek için aşağıdaki dosyaları projenize ekleyin:
+Aşağıdaki dosyaları projenize dahil edin:
 
 ```text
 UART_ex.c
 UART_ex.h
-
 Circuler_Buffer.c
 Circuler_Buffer.h
 ```
 
-Örneğin proje yapısı:
-
-```text
-MyProject
-│
-├── Core
-│   ├── Inc
-│   └── Src
-│
-├── Drivers
-│   └── UART
-│       ├── UART_ex.c
-│       ├── UART_ex.h
-│       ├── Circuler_Buffer.c
-│       └── Circuler_Buffer.h
-│
-└── ...
-```
-
-Driver'ı kullanacağınız dosyaya:
+Ardından:
 
 ```c
 #include "UART_ex.h"
 ```
 
-ekleyin.
+satırını driver'ı kullanacağınız `.c` dosyasına ekleyin.
 
----
+### 2. UART'ı STM32CubeMX üzerinden yapılandırın
 
-# ⚙️ STM32CubeMX Ayarları
+Kullanacağınız UART peripheral'ını aktif edin.
 
-Öncelikle STM32CubeMX üzerinden kullanacağınız UART peripheral'ını aktif edin.
-
-Örnek olarak USART2 kullanılabilir.
-
-UART ayarları:
+Örneğin:
 
 ```text
 Baud Rate   → 115200
@@ -140,143 +43,19 @@ Stop Bits   → 1
 Mode        → TX/RX
 ```
 
-Örneğin:
+### 3. UART Interrupt'ını aktif edin
 
-```c
-huart2.Init.BaudRate = 115200;
-huart2.Init.WordLength = UART_WORDLENGTH_8B;
-huart2.Init.StopBits = UART_STOPBITS_1;
-huart2.Init.Parity = UART_PARITY_NONE;
-huart2.Init.Mode = UART_MODE_TX_RX;
-```
+NVIC içerisinden kullandığınız UART'ın global interrupt'ını aktif edin.
 
-UART interrupt'ının NVIC üzerinden aktif olduğundan emin olun.
-
-Örneğin USART2 kullanılıyorsa:
+Örneğin USART2 kullanıyorsanız:
 
 ```text
 USART2 global interrupt → Enabled
 ```
 
----
+### 4. Circular Buffer oluşturun
 
-# 🔄 Circular Buffer
-
-Driver'ın temelini Circular Buffer oluşturmaktadır.
-
-Circular Buffer içerisinde iki temel indeks bulunur:
-
-```c
-uint16_t head;
-uint16_t tail;
-```
-
-`head` verinin yazılacağı konumu, `tail` ise okunacağı konumu gösterir.
-
-Buffer boyutu varsayılan olarak:
-
-```c
-#define circuler_buffer_size 512
-```
-
-olarak belirlenmiştir.
-
-Buffer yapısı:
-
-```c
-typedef struct
-{
-    uint8_t buffer[circuler_buffer_size];
-
-    uint16_t head;
-    uint16_t tail;
-
-} Circuler_Buffer_t;
-```
-
----
-
-# 📥 Veriyi Buffer'a Ekleme
-
-Buffer'a veri eklemek için:
-
-```c
-Circuler_Buffer_Enqueue(&buffer, data);
-```
-
-fonksiyonu kullanılır.
-
-Fonksiyon başarılı olursa `true`, buffer doluysa `false` döndürür.
-
-Örneğin:
-
-```c
-uint8_t data = 'A';
-
-if(Circuler_Buffer_Enqueue(&buffer, data))
-{
-    // Veri başarıyla eklendi.
-}
-```
-
----
-
-# 📤 Buffer'dan Veri Okuma
-
-Buffer içerisindeki veriyi okumak için:
-
-```c
-Circuler_Buffer_Dequeue(&buffer, &data);
-```
-
-kullanılır.
-
-Örneğin:
-
-```c
-uint8_t data;
-
-if(Circuler_Buffer_Dequeue(&buffer, &data))
-{
-    // Veri başarıyla okundu.
-}
-```
-
-Buffer boşsa fonksiyon `false` döndürür.
-
----
-
-# 🔎 Buffer Durumunu Kontrol Etme
-
-Buffer'ın boş olup olmadığını kontrol etmek için:
-
-```c
-circuler_buffer_is_empty(&buffer);
-```
-
-Buffer'ın dolu olup olmadığını kontrol etmek için:
-
-```c
-circuler_buffer_is_fully(&buffer);
-```
-
-kullanılabilir.
-
-Buffer içerisinde kaç adet veri olduğunu öğrenmek için:
-
-```c
-Circuler_Buffer_Count(&buffer);
-```
-
-fonksiyonu kullanılabilir.
-
----
-
-# 🚀 UART Driver'ı Başlatma
-
-UART driver için öncelikle `UART_Ex_t` yapısından bir değişken oluşturulmalıdır.
-
-Ayrıca RX ve TX için iki ayrı Circular Buffer oluşturulmalıdır.
+RX ve TX için iki ayrı buffer oluşturun:
 
 ```c
 UART_Ex_t uart2;
@@ -285,7 +64,9 @@ Circuler_Buffer_t UART_cb_In;
 Circuler_Buffer_t UART_cb_out;
 ```
 
-Daha sonra driver şu şekilde başlatılır:
+### 5. UART Driver'ı başlatın
+
+STM32CubeMX tarafından oluşturulan UART handle'ını kullanarak driver'ı başlatın:
 
 ```c
 UARTx_Initialization(
@@ -296,112 +77,31 @@ UARTx_Initialization(
 );
 ```
 
-Burada:
+### 6. Artık UART'ı kullanabilirsiniz
 
-```text
-uart2       → UART driver yapısı
-huart2      → STM32 HAL UART handle'ı
-UART_cb_In  → RX buffer
-UART_cb_out → TX buffer
-```
-
-olarak kullanılmaktadır.
-
-Initialization fonksiyonu içerisinde RXNE ve TXE interrupt'ları aktif edilir.
-
----
-
-# ✏️ Karakter Gönderme
-
-UART üzerinden tek bir karakter göndermek için:
+Karakter göndermek:
 
 ```c
 UARTx_Write_Char(&uart2, 'A');
 ```
 
-kullanılabilir.
-
-Karakter önce TX Circular Buffer'a eklenir.
-
-Daha sonra TXE interrupt'ı ile UART donanımına aktarılır.
-
----
-
-# 📝 String Gönderme
-
-String göndermek için:
+String göndermek:
 
 ```c
-UARTx_Put_String(&uart2, "Merhaba Dünya!\r\n");
+UARTx_Put_String(&uart2, "Merhaba STM32\r\n");
 ```
 
-kullanılabilir.
-
-Fonksiyon string içerisindeki karakterleri tek tek TX buffer'a ekler.
-
-Örneğin:
-
-```c
-UARTx_Put_String(&uart2, "STM32 UART Driver\r\n");
-```
-
----
-
-# 🖨️ Printf Benzeri Kullanım
-
-Driver'ın kullanışlı özelliklerinden biri `printf` benzeri formatlı veri gönderebilmesidir.
-
-Bunun için:
-
-```c
-UARTx_Printf(&uart2, "ADC Value: %d\r\n", adcValue);
-```
-
-kullanılabilir.
-
-Örneğin:
-
-```c
-int temperature = 25;
-
-UARTx_Printf(
-    &uart2,
-    "Temperature: %d C\r\n",
-    temperature
-);
-```
-
-Birden fazla değişken de gönderilebilir:
+Formatlı veri göndermek:
 
 ```c
 UARTx_Printf(
     &uart2,
-    "X: %d | Y: %d | Z: %d\r\n",
-    x,
-    y,
-    z
+    "ADC Value: %d\r\n",
+    adcValue
 );
 ```
 
-Bu fonksiyon arka planda `vsnprintf()` kullanarak verilen formatı oluşturur ve ardından `UARTx_Put_String()` fonksiyonu ile TX buffer'a aktarır.
-
----
-
-# 📖 UART Üzerinden Satır Okuma
-
-UART üzerinden gelen mesajları satır halinde okumak için:
-
-```c
-UARTx_ReadLine(
-    &uart2,
-    lineBuffer,
-    sizeof(lineBuffer)
-);
-```
-
-kullanılabilir.
-
-Örneğin:
+UART üzerinden gelen satırı okumak:
 
 ```c
 char lineBuffer[128];
@@ -411,227 +111,58 @@ if(UARTx_ReadLine(
         lineBuffer,
         sizeof(lineBuffer)))
 {
-    // Yeni bir mesaj geldi.
+    // Yeni mesaj geldi.
 }
 ```
 
-Driver `\r\n` karakterlerini satır sonu olarak kullanmaktadır.
-
-Örneğin bilgisayardan:
-
-```text
-Hello STM32\r\n
-```
-
-gönderildiğinde:
-
-```c
-lineBuffer
-```
-
-içerisinde:
-
-```text
-Hello STM32
-```
-
-mesajı elde edilir.
-
-Bu yapı özellikle UART üzerinden komut gönderilen uygulamalarda kullanılabilir.
-
-Örneğin:
-
-```text
-LED_ON\r\n
-LED_OFF\r\n
-MOTOR_START\r\n
-MOTOR_STOP\r\n
-```
-
-gibi komutlar alınabilir.
+Bu kadar. 🎯 Driver'ın temel kullanımına başlamak için yukarıdaki adımlar yeterlidir.
 
 ---
 
-# ⚡ Interrupt Yapısı
+# 📌 Çalışma Mantığı
 
-UART interrupt handler içerisinde iki temel durum kontrol edilmektedir.
+Driver'ın temelinde **Circular Buffer** ve **UART Interrupt** yapısı bulunmaktadır.
 
-## RXNE
+UART üzerinden veri geldiğinde:
 
-UART üzerinden yeni bir veri geldiğinde `RXNE` interrupt'ı oluşur.
-
-Gelen karakter okunarak RX buffer'a eklenir:
-
-```c
-uint8_t ch;
-
-ch = (uint8_t)(
-    uart2.huart->Instance->DR & 0x00FF
-);
-
-Circuler_Buffer_Enqueue(
-    uart2.cbIn,
-    ch
-);
+```text
+UART
+ ↓
+RX Interrupt
+ ↓
+RX Circular Buffer
+ ↓
+Uygulama
 ```
 
-## TXE
+Veri gönderileceği zaman:
 
-UART veri register'ı yeni veri göndermeye hazır olduğunda `TXE` interrupt'ı oluşur.
-
-TX buffer boş değilse buffer içerisindeki bir sonraki karakter UART'a gönderilir:
-
-```c
-if(!circuler_buffer_is_empty(uart2.cbOut))
-{
-    uint8_t ch;
-
-    if(Circuler_Buffer_Dequeue(
-        uart2.cbOut,
-        &ch))
-    {
-        uart2.huart->Instance->DR = ch;
-    }
-}
+```text
+Uygulama
+ ↓
+TX Circular Buffer
+ ↓
+TX Interrupt
+ ↓
+UART
 ```
 
-TX buffer boş olduğunda ise TXE interrupt'ı devre dışı bırakılır.
+Bu yapı sayesinde CPU'nun UART veri aktarımını sürekli olarak beklemesine gerek kalmaz.
 
 ---
 
-# 💻 Tam Kullanım Örneği
+# 🔄 Circular Buffer
 
-Aşağıdaki örnek USART2 kullanarak driver'ın temel kullanımını göstermektedir.
-
-```c
-#include "main.h"
-#include "UART_ex.h"
-
-UART_HandleTypeDef huart2;
-
-UART_Ex_t uart2;
-
-Circuler_Buffer_t UART_cb_In;
-Circuler_Buffer_t UART_cb_out;
-
-int main(void)
-{
-    HAL_Init();
-
-    SystemClock_Config();
-
-    MX_GPIO_Init();
-    MX_USART2_UART_Init();
-
-    UARTx_Initialization(
-        &uart2,
-        &huart2,
-        &UART_cb_In,
-        &UART_cb_out
-    );
-
-    while(1)
-    {
-        UARTx_Printf(
-            &uart2,
-            "STM32 UART Driver\r\n"
-        );
-
-        HAL_Delay(2000);
-    }
-}
-```
-
-Bu örnekte her 2 saniyede bir:
+Driver'da RX ve TX işlemleri için ayrı Circular Buffer kullanılmaktadır.
 
 ```text
-STM32 UART Driver
+RX → RX Buffer
+TX → TX Buffer
 ```
 
-mesajı UART üzerinden gönderilir.
+Buffer içerisinde `head` ve `tail` indeksleri kullanılarak verilerin eklenmesi ve okunması sağlanır.
 
----
-
-# 📥 Gelen Mesajı Okuma Örneği
-
-UART üzerinden gelen mesajları okumak için:
-
-```c
-char lineBuffer[128];
-
-while(1)
-{
-    if(UARTx_ReadLine(
-            &uart2,
-            lineBuffer,
-            sizeof(lineBuffer)))
-    {
-        UARTx_Printf(
-            &uart2,
-            "Gelen mesaj: %s\r\n",
-            lineBuffer
-        );
-    }
-}
-```
-
-Örneğin bilgisayardan:
-
-```text
-Merhaba STM32
-```
-
-gönderildiğinde STM32:
-
-```text
-Gelen mesaj: Merhaba STM32
-```
-
-şeklinde cevap verebilir.
-
----
-
-# 📊 Buffer Yapısının Özeti
-
-Bu driver'da UART haberleşmesi için iki Circular Buffer kullanılmaktadır:
-
-```text
-                     STM32
-                       │
-              ┌────────┴────────┐
-              │                 │
-             RX                TX
-              │                 │
-              ▼                 ▼
-        ┌───────────┐     ┌───────────┐
-        │ RX Buffer │     │ TX Buffer │
-        └─────┬─────┘     └─────┬─────┘
-              │                 │
-              ▼                 ▼
-          Uygulama            UART
-```
-
-RX tarafında:
-
-```text
-UART → RX Interrupt → RX Buffer → Uygulama
-```
-
-TX tarafında:
-
-```text
-Uygulama → TX Buffer → TX Interrupt → UART
-```
-
-şeklinde bir veri akışı vardır.
-
----
-
-# ⚠️ Dikkat Edilmesi Gerekenler
-
-### 1. Buffer boyutu
-
-Circular Buffer boyutu:
+Varsayılan buffer boyutu:
 
 ```c
 #define circuler_buffer_size 512
@@ -639,42 +170,95 @@ Circular Buffer boyutu:
 
 olarak belirlenmiştir.
 
-Uygulamanızda daha büyük veya daha küçük mesajlar kullanılacaksa bu değer ihtiyaca göre değiştirilebilir.
+---
 
-### 2. UART Interrupt
+# 📥 RX İşlemi
 
-UART RX ve TX işlemlerinin düzgün çalışması için ilgili UART interrupt'ının aktif olması gerekir.
+UART üzerinden bir karakter geldiğinde RX interrupt'ı tetiklenir.
 
-Örneğin USART2 kullanılıyorsa:
+Gelen karakter RX Circular Buffer'a eklenir.
 
-```text
-USART2 global interrupt → Enabled
-```
+Uygulama tarafında ise bu veriler buffer üzerinden okunur.
 
-olmalıdır.
+Bu sayede UART'tan gelen veriler, uygulamanın o anda işlem yapıp yapmadığından bağımsız olarak buffer içerisinde tutulabilir.
 
-### 3. RX ve TX buffer'ları
+---
 
-RX ve TX için ayrı Circular Buffer kullanılması gerekir.
+# 📤 TX İşlemi
 
-```c
-Circuler_Buffer_t UART_cb_In;
-Circuler_Buffer_t UART_cb_out;
-```
+Uygulama tarafından gönderilmek istenen veriler önce TX Circular Buffer'a eklenir.
 
-Bu iki buffer'ın aynı anda RX ve TX için kullanılmaması gerekir.
+TX interrupt'ı aktif olduğunda buffer içerisindeki veriler sırayla UART donanımına aktarılır.
 
-### 4. Satır sonu
+TX buffer boşaldığında TX interrupt'ı devre dışı bırakılır.
 
-`UARTx_ReadLine()` fonksiyonu mesaj sonunu:
+---
+
+# 📝 Satır Okuma
+
+`UARTx_ReadLine()` fonksiyonu UART üzerinden gelen karakterleri biriktirerek satır halinde okunmasını sağlar.
+
+Satır sonu olarak:
 
 ```text
 \r\n
 ```
 
-karakter dizisi ile belirlemektedir.
+kullanılır.
 
-Bu nedenle terminal programının satır sonu ayarının `CRLF` olması önerilir.
+Örneğin bilgisayardan:
+
+```text
+LED_ON\r\n
+```
+
+gönderildiğinde uygulama tarafında:
+
+```c
+lineBuffer
+```
+
+içerisinden:
+
+```text
+LED_ON
+```
+
+mesajı alınabilir.
+
+Bu yapı özellikle UART üzerinden komut gönderilen uygulamalarda kullanışlıdır.
+
+---
+
+# 🖨️ Printf Desteği
+
+`UARTx_Printf()` fonksiyonu sayesinde UART üzerinden formatlı veri gönderilebilir.
+
+Örneğin:
+
+```c
+UARTx_Printf(
+    &uart2,
+    "Temperature: %d C\r\n",
+    temperature
+);
+```
+
+Bu özellik debug mesajları ve sensör verilerinin UART üzerinden gönderilmesi için kullanılabilir.
+
+---
+
+# 📂 Dosya Yapısı
+
+```text
+STM32F4-Buffered-UART-Driver
+│
+├── UART_ex.c
+├── UART_ex.h
+├── Circuler_Buffer.c
+├── Circuler_Buffer.h
+└── README.md
+```
 
 ---
 
@@ -694,8 +278,4 @@ Bu nedenle terminal programının satır sonu ayarının `CRLF` olması önerili
 
 # 🎯 Projenin Amacı
 
-Bu proje STM32F4 üzerinde UART haberleşmesini interrupt ve Circular Buffer kullanarak gerçekleştirmeyi öğrenmek ve farklı projelerde tekrar kullanılabilecek bir UART driver geliştirmek amacıyla hazırlanmıştır.
-
-Driver'ın temel amacı UART üzerinden veri gönderme ve alma işlemlerini uygulama kodundan mümkün olduğunca ayırarak daha düzenli ve tekrar kullanılabilir bir yapı oluşturmaktır.
-
-Bu yapı özellikle komut tabanlı UART uygulamaları, debug mesajları, sensör verileri ve mikrodenetleyici ile bilgisayar arasındaki seri haberleşme uygulamalarında kullanılabilir.
+Bu proje STM32F4 üzerinde UART haberleşmesini **Interrupt ve Circular Buffer** kullanarak gerçekleştirmek ve farklı projelerde tekrar kullanılabilecek bir UART driver geliştirmek amacıyla hazırlanmıştır.
